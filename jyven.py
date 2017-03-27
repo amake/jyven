@@ -75,6 +75,10 @@ def maven(artifact_id, repo=None):
             sys.path.append(dep)
 
 
+def jcenter(artifact_id):
+    maven(artifact_id, repo='https://jcenter.bintray.com/')
+
+
 if __name__ == '__main__':
     maven('commons-lang:commons-lang:2.6')
     from org.apache.commons.lang.math import JVMRandom
