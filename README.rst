@@ -12,15 +12,22 @@ Specify a Maven dependency like this::
     maven('group:artifact:version')
 
 The artifact and its ``compile`` dependencies will be downloaded from Maven
-Central and appended to ``sys.path``. To specify a repository other than Maven
-Central, use the ``repo`` kwarg::
+Central and appended to ``sys.path``. To specify a repositories other than Maven
+Central, use the ``repos`` kwarg::
 
-    maven('group:artifact:version', repo='http://example.com')
+    maven('group:artifact:version', repos=['http://example.com'])
 
 There is also a preset for jCenter::
 
     from jyven import jcenter
     jcenter('group:artifact:version')
+
+You can also pre-declare multiple repositories at once; do so before declaring
+any dependencies::
+
+    from jyven import maven, repositories
+    repositories([http://example.com', 'http://localnexus'])
+    maven('group:artifact:version')
 
 Quick Install
 =============

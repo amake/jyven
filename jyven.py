@@ -5,83 +5,157 @@ import os
 from os import path
 import subprocess
 import logging
+from tempfile import TemporaryFile
+
+maven_central_url = 'https://repo1.maven.org/maven2'
+jcenter_url = 'https://jcenter.bintray.com'
+
+pom_template = '''<project>
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>id</groupId>
+    <artifactId>id</artifactId>
+    <version>1.0</version>
+    <repositories>
+        %(repositories)s
+    </repositories>
+    <dependencies>
+        %(dependencies)s
+    </dependencies>
+</project>
+'''
+
+repo_template = '''<repository>
+    <id>%(id)s</id>
+    <url>%(url)s</url>
+</repository>
+'''
 
 mvn_home = path.expanduser('~/.m2')
 
 dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
+user_repos = []
+
+
+def repositories(repos):
+    for repo in repos:
+        if repo not in user_repos:
+            user_repos.append(repo)
+
+
+def generate_pom(repos, deps):
+    repos_snip = '\n'.join([repo_template % {'id': n, 'url': url}
+                            for n, url in enumerate(repos)])
+    deps_snip = '\n'.join([dep.to_xml() for dep in deps])
+    return pom_template % {'repositories': repos_snip,
+                           'dependencies': deps_snip}
+
+
+class Coordinates(object):
+    def __init__(self, coords):
+        parts = coords.split(':')
+        if len(parts) == 3:
+            self.group, self.artifact, self.version = parts
+            self.packaging, self.classifier = None, None
+        elif len(parts) == 4:
+            self.group, self.artifact, self.packaging, self.version = parts
+            self.classifier = None
+        elif len(parts) == 5:
+            self.group, self.artifact, self.packaging, self.classifier, self.version = parts
+        else:
+            raise Exception
+        self.local_path = path.join(mvn_home, 'repository',
+                                    self.group.replace('.', '/'),
+                                    self.artifact, self.version)
+
+    def to_xml(self):
+        parts = ['<dependency>']
+        if self.group is not None:
+            parts.append('<groupId>%s</groupId>' % self.group)
+        if self.artifact is not None:
+            parts.append('<artifactId>%s</artifactId>' % self.artifact)
+        if self.packaging is not None:
+            parts.append('<type>%s</type>' % self.packaging)
+        if self.classifier is not None:
+            parts.append('<classifier>%s</classifier>' % self.classifier)
+        if self.version is not None:
+            parts.append('<version>%s</version>' % self.version)
+        parts.append('</dependency>')
+        return '\n'.join(parts)
+
+    def __repr__(self):
+        return ':'.join([part for part in
+                         [self.group, self.artifact, self.packaging, self.classifier, self.version]
+                         if part is not None])
+
 
 class Artifact(object):
-    def __init__(self, coords):
-        self.coords = coords
-        self._load_artifacts()
-
-    def _load_artifacts(self):
-        home = coords_to_path(self.coords)
-        if path.isdir(home):
-            for f in os.listdir(home):
-                _, ext = path.splitext(f)
-                setattr(self, ext[1:], path.join(home, f))
+    def __init__(self, coords, repos=None):
+        self.coords = Coordinates(coords)
+        self.repos = repos or []
 
     @property
-    def dependencies(self):
-        mvn_deplist = ['mvn', 'dependency:list',
-                       '-DincludeScope=compile',
-                       '-f', self.pom]
-        deps_text = subprocess.check_output(mvn_deplist)
-        return dep_pattern.findall(deps_text)
+    def classpath(self):
+        pom = generate_pom(self.repos, [self.coords])
+        logging.debug('Generated POM:')
+        logging.debug(pom)
+        with TemporaryFile() as tmp:
+            tmp.write(pom)
+            tmp.flush()
+            mvn_deplist = ['mvn', 'dependency:build-classpath',
+                           '-DincludeScope=compile',
+                           '-DpathSeparator=:',
+                           '-f', tmp.name]
+            logging.info(' '.join(mvn_deplist))
+            cp_output = subprocess.check_output(mvn_deplist)
+        return next(line for line in cp_output.split('\n')
+                    if not line.startswith('[INFO]'))
 
     @property
     def dependency_files(self):
-        return [coords_to_path(d) for d in self.dependencies]
+        return self.classpath.split(':')
 
-    def fetch(self, repo=None):
+    def fetch(self):
         mvn_get = ['mvn', 'dependency:get',
                    '-Dartifact=%s' % self.coords]
-        if repo is not None:
-            mvn_get.append('-DremoteRepositories=%s' % repo)
+        if self.repos:
+            named = ['%s::::%s' % (n, url) for n, url in enumerate(self.repos)]
+            mvn_get.append('-DremoteRepositories=%s' % ','.join(named))
+        logging.info(' '.join(mvn_get))
         subprocess.check_call(mvn_get)
-        self._load_artifacts()
 
     def __nonzero__(self):
-        return hasattr(self, 'pom')
+        return (path.isdir(self.coords.local_path) and
+                any(path.splitext(i)[1] == '.pom'
+                    for i in os.listdir(self.coords.local_path)))
 
     def __repr__(self):
         return '<Artifact %s>' % self.coords
 
 
-def coords_to_path(coords):
-    parts = coords.split(':')
-    if len(parts) == 3:
-        group_id, artifact_id, version = parts
-        packaging, classifier = None, None
-    elif len(parts) == 4:
-        group_id, artifact_id, packaging, version = parts
-        classifier = None
-    elif len(parts) == 5:
-        group_id, artifact_id, packaging, classifier, version = parts
-    else:
-        raise Exception
-    home = path.join(mvn_home, 'repository',
-                     group_id.replace('.', '/'), artifact_id, version)
-    return (home if packaging is None
-            else path.join(home, '%s-%s.%s' % (artifact_id, version, packaging)))
-
-
-def maven(coords, repo=None):
-    artifact = Artifact(coords)
+def maven(coords, repos=None):
+    all_repos = list(user_repos)
+    if repos is not None:
+        repos.extend(repos)
+    artifact = Artifact(coords, all_repos)
     if not artifact:
         logging.info('Missing artifact: %s' % artifact)
-        artifact.fetch(repo=repo)
-    deps = [artifact.jar] + artifact.dependency_files
+        artifact.fetch()
+    try:
+        deps = artifact.dependency_files
+    except subprocess.CalledProcessError:
+        artifact.fetch()
+        deps = artifact.dependency_files
+    logging.info('Adding dependency to path: %s', artifact.coords)
     for dep in deps:
         if dep not in sys.path:
-            logging.info('Adding dependency to path: %s', artifact.coords)
+            logging.debug(dep)
             sys.path.append(dep)
+    return artifact
 
 
 def jcenter(coords):
-    maven(coords, repo='https://jcenter.bintray.com/')
+    maven(coords, repos=[jcenter_url])
 
 
 if __name__ == '__main__':
