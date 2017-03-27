@@ -11,9 +11,9 @@ Specify a Maven dependency like this::
     from jyven import maven
     maven('group:artifact:version')
 
-The artifact and its `compile` dependencies will be downloaded from Maven
-Central and appended to `sys.path`. To specify a repository other than Maven
-Central, use the `repo` kwarg::
+The artifact and its ``compile`` dependencies will be downloaded from Maven
+Central and appended to ``sys.path``. To specify a repository other than Maven
+Central, use the ``repo`` kwarg::
 
     maven('group:artifact:version', repo='http://example.com')
 
@@ -32,7 +32,7 @@ This package is not on PyPI, so install with::
 Requirements
 ============
 
-The Maven 3 executable must be accessible from the path as `mvn`.
+The Maven 3 executable must be accessible from the path as ``mvn``.
 
 Limitations
 ===========
