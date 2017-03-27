@@ -14,7 +14,11 @@ dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 class Artifact(object):
     def __init__(self, artifact_id):
         self.id = artifact_id
-        home = artifact_to_path(artifact_id)
+        self._load_artifacts()
+
+    def _load_artifacts(self):
+        home = artifact_to_path(self.id)
+        if path.isdir(home):
         for f in os.listdir(home):
             _, ext = path.splitext(f)
             setattr(self, ext[1:], path.join(home, f))
@@ -31,8 +35,16 @@ class Artifact(object):
     def dependency_files(self):
         return [artifact_to_path(d) for d in self.dependencies]
 
+    def fetch(self, repo=None):
+        mvn_get = ['mvn', 'dependency:get',
+                   '-Dartifact=%s' % self.id]
+        if repo is not None:
+            mvn_get.append('-DremoteRepositories=%s' % repo)
+        subprocess.check_call(mvn_get)
+        self._load_artifacts()
+
     def __nonzero__(self):
-        return len(vars(self)) > 1
+        return hasattr(self, 'pom')
 
     def __repr__(self):
         return '<Artifact %s>' % self.id
@@ -55,11 +67,7 @@ def maven(artifact_id, repo=None):
     artifact = Artifact(artifact_id)
     if not artifact:
         logging.info('Missing artifact: %s' % artifact)
-        mvn_get = ['mvn', 'dependency:get',
-                   '-Dartifact=%s' % artifact.id]
-        if repo is not None:
-            mvn_get.append('-DrepoUrl=%s' % repo)
-        subprocess.check_call(mvn_get)
+        artifact.fetch(repo=repo)
     deps = artifact.dependency_files
     logging.info('Adding dependency to path: %s', artifact.id)
     sys.path.append(artifact.jar)
