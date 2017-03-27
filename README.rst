@@ -32,7 +32,7 @@ This package is not on PyPI, so install with::
 Requirements
 ============
 
-The Maven executable must be accessible from the path as `mvn`.
+The Maven 3 executable must be accessible from the path as `mvn`.
 
 Limitations
 ===========
