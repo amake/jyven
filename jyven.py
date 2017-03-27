@@ -19,9 +19,9 @@ class Artifact(object):
     def _load_artifacts(self):
         home = artifact_to_path(self.id)
         if path.isdir(home):
-        for f in os.listdir(home):
-            _, ext = path.splitext(f)
-            setattr(self, ext[1:], path.join(home, f))
+            for f in os.listdir(home):
+                _, ext = path.splitext(f)
+                setattr(self, ext[1:], path.join(home, f))
 
     @property
     def dependencies(self):
@@ -68,11 +68,11 @@ def maven(artifact_id, repo=None):
     if not artifact:
         logging.info('Missing artifact: %s' % artifact)
         artifact.fetch(repo=repo)
-    deps = artifact.dependency_files
-    logging.info('Adding dependency to path: %s', artifact.id)
-    sys.path.append(artifact.jar)
-    logging.info('Adding recursive dependencies to path: %s', deps)
-    sys.path.extend(deps)
+    deps = [artifact.jar] + artifact.dependency_files
+    for dep in deps:
+        if dep not in sys.path:
+            logging.info('Adding dependency to path: %s', artifact.id)
+            sys.path.append(dep)
 
 
 if __name__ == '__main__':
