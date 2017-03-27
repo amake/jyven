@@ -12,12 +12,12 @@ dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
 
 class Artifact(object):
-    def __init__(self, artifact_id):
-        self.id = artifact_id
+    def __init__(self, coords):
+        self.coords = coords
         self._load_artifacts()
 
     def _load_artifacts(self):
-        home = artifact_to_path(self.id)
+        home = coords_to_path(self.coords)
         if path.isdir(home):
             for f in os.listdir(home):
                 _, ext = path.splitext(f)
@@ -33,11 +33,11 @@ class Artifact(object):
 
     @property
     def dependency_files(self):
-        return [artifact_to_path(d) for d in self.dependencies]
+        return [coords_to_path(d) for d in self.dependencies]
 
     def fetch(self, repo=None):
         mvn_get = ['mvn', 'dependency:get',
-                   '-Dartifact=%s' % self.id]
+                   '-Dartifact=%s' % self.coords]
         if repo is not None:
             mvn_get.append('-DremoteRepositories=%s' % repo)
         subprocess.check_call(mvn_get)
@@ -47,36 +47,41 @@ class Artifact(object):
         return hasattr(self, 'pom')
 
     def __repr__(self):
-        return '<Artifact %s>' % self.id
+        return '<Artifact %s>' % self.coords
 
 
-def artifact_to_path(artifact_id):
-    parts = artifact_id.split(':')
+def coords_to_path(coords):
+    parts = coords.split(':')
     if len(parts) == 3:
-        grp, art, ver = parts
-        typ = None
+        group_id, artifact_id, version = parts
+        packaging, classifier = None, None
     elif len(parts) == 4:
-        grp, art, typ, ver = parts
+        group_id, artifact_id, packaging, version = parts
+        classifier = None
+    elif len(parts) == 5:
+        group_id, artifact_id, packaging, classifier, version = parts
+    else:
+        raise Exception
     home = path.join(mvn_home, 'repository',
-                     grp.replace('.', '/'), art, ver)
-    return (home if typ is None
-            else path.join(home, '%s-%s.%s' % (art, ver, typ)))
+                     group_id.replace('.', '/'), artifact_id, version)
+    return (home if packaging is None
+            else path.join(home, '%s-%s.%s' % (artifact_id, version, packaging)))
 
 
-def maven(artifact_id, repo=None):
-    artifact = Artifact(artifact_id)
+def maven(coords, repo=None):
+    artifact = Artifact(coords)
     if not artifact:
         logging.info('Missing artifact: %s' % artifact)
         artifact.fetch(repo=repo)
     deps = [artifact.jar] + artifact.dependency_files
     for dep in deps:
         if dep not in sys.path:
-            logging.info('Adding dependency to path: %s', artifact.id)
+            logging.info('Adding dependency to path: %s', artifact.coords)
             sys.path.append(dep)
 
 
-def jcenter(artifact_id):
-    maven(artifact_id, repo='https://jcenter.bintray.com/')
+def jcenter(coords):
+    maven(coords, repo='https://jcenter.bintray.com/')
 
 
 if __name__ == '__main__':
