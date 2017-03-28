@@ -105,11 +105,14 @@ class Artifact(object):
             mvn_deplist = ['mvn', 'dependency:build-classpath',
                            '-DincludeScope=compile',
                            '-DpathSeparator=:',
+                           '-DoutputAbsoluteArtifactFilename=true',
+                           '-Dmdep.outputFilterFile=true',
                            '-f', tmp.name]
             logging.info(' '.join(mvn_deplist))
             cp_output = subprocess.check_output(mvn_deplist)
-        return next(line for line in cp_output.split('\n')
-                    if not line.startswith('[INFO]'))
+        cp_def = next(line for line in cp_output.split('\n')
+                      if line.startswith('classpath='))
+        return cp_def[len('classpath='):]
 
     @property
     def dependency_files(self):
