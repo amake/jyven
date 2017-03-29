@@ -25,4 +25,5 @@ setup(
     ],
     keywords='jython maven dependency import',
     py_modules=['jyven'],
+    test_suite='jyven_test.TestJyven',
 )
