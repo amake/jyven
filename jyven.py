@@ -209,7 +209,7 @@ def maven(coords, repos=None):
 
 
 def jcenter(coords):
-    maven(coords, repos=[jcenter_url])
+    return maven(coords, repos=[jcenter_url])
 
 
 if __name__ == '__main__':
