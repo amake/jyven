@@ -33,6 +33,10 @@ repo_template = '''<repository>
 mvn_home = path.expanduser('~/.m2')
 local_repo = path.join(mvn_home, 'repository')
 
+proj_root = (path.dirname(path.realpath(sys.argv[0]))
+             if sys.argv[0] else None)
+proj_cache_file = path.join(proj_root, '.jyven.json') if proj_root else None
+
 dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
 user_repos = []
@@ -44,23 +48,23 @@ def check_classpath(classpath):
 
 
 class Cache(object):
-    def __init__(self):
+    def __init__(self, cache_file):
         self.cache = {}
         self.json = None
-        self.cache_file = None
-        if not sys.argv[0]:
-            return
-        import json
-        self.json = json
-        cache_dir = path.dirname(path.realpath(sys.argv[0]))
-        self.cache_file = path.join(cache_dir, '.jyven.json')
-        logging.debug('Using cache file: %s', self.cache_file)
-        if path.isfile(self.cache_file):
-            with open(self.cache_file) as infile:
-                try:
-                    self.cache = json.load(infile)
-                except Exception, e:
-                    logging.error('Failed to load cache: %s', e)
+        self.cache_file = cache_file
+        if cache_file:
+            import json
+            self.json = json
+            if path.isfile(cache_file):
+                self._load(cache_file)
+
+    def _load(self, cache_file):
+        logging.debug('Loading cache file: %s', cache_file)
+        with open(cache_file) as infile:
+            try:
+                self.cache.update(self.json.load(infile))
+            except Exception, e:
+                logging.error('Failed to load cache: %s', e)
 
     def fetch(self, coords):
         cached = self.cache.get(str(coords), None)
@@ -74,7 +78,7 @@ class Cache(object):
                 self.json.dump(self.cache, outfile)
 
 
-cache = Cache()
+cache = Cache(proj_cache_file)
 
 
 def repositories(repos):
