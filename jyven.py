@@ -46,6 +46,8 @@ def check_classpath(classpath):
 class Cache(object):
     def __init__(self):
         self.cache = {}
+        self.json = None
+        self.cache_file = None
         if not sys.argv[0]:
             return
         import json
