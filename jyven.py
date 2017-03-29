@@ -213,7 +213,4 @@ def jcenter(coords):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    maven('commons-lang:commons-lang:2.6')
-    from org.apache.commons.lang.math import JVMRandom
-    print(JVMRandom().nextDouble())
+    pass
