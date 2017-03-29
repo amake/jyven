@@ -37,20 +37,42 @@ dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
 user_repos = []
 
-cache_file = None
-cache = {}
 
-if sys.argv[0]:
-    import json
-    cache_dir = path.dirname(path.realpath(sys.argv[0]))
-    cache_file = path.join(cache_dir, '.jyven.json')
-    logging.debug('Using cache file: %s', cache_file)
-    if path.isfile(cache_file):
-        with open(cache_file) as infile:
-            try:
-                cache = json.load(infile)
-            except Exception, e:
-                logging.error('Failed to load cache: %s', e)
+def check_classpath(classpath):
+    return classpath and all(path.isfile(item)
+                             for item in classpath.split(':'))
+
+
+class Cache(object):
+    def __init__(self):
+        self.cache = {}
+        if not sys.argv[0]:
+            return
+        import json
+        self.json = json
+        cache_dir = path.dirname(path.realpath(sys.argv[0]))
+        self.cache_file = path.join(cache_dir, '.jyven.json')
+        logging.debug('Using cache file: %s', self.cache_file)
+        if path.isfile(self.cache_file):
+            with open(self.cache_file) as infile:
+                try:
+                    self.cache = json.load(infile)
+                except Exception, e:
+                    logging.error('Failed to load cache: %s', e)
+
+    def fetch(self, coords):
+        cached = self.cache.get(str(coords), None)
+        return cached if check_classpath(cached) else None
+
+    def store(self, coords, classpath):
+        self.cache[str(coords)] = classpath
+        if self.cache_file and self.json:
+            with open(self.cache_file, 'w') as outfile:
+                logging.debug('Writing cache: entries=%d', len(self.cache))
+                self.json.dump(self.cache, outfile)
+
+
+cache = Cache()
 
 
 def repositories(repos):
@@ -108,22 +130,18 @@ class Coordinates(object):
 
 
 class Artifact(object):
-    def __init__(self, coords, repos=None):
+    def __init__(self, coords, repos=None, classpath=None):
         self.coords = Coordinates(coords)
         self.repos = repos or []
-
-    def _classpath_from_cache(self):
-        cached = cache.get(str(self.coords), None)
-        if cached and all(path.isfile(item) for item in cached.split(':')):
-            return cached
-        else:
-            return None
+        self._classpath = classpath if check_classpath(classpath) else None
 
     @property
     def classpath(self):
-        cached = self._classpath_from_cache()
-        if cached:
-            return cached
+        if not self._classpath:
+            self._classpath = self._load_classpath()
+        return self._classpath
+
+    def _load_classpath(self):
         pom = generate_pom(self.repos, [self.coords])
         logging.debug('Generated POM:\n%s', pom)
         with TemporaryFile() as tmp:
@@ -139,10 +157,8 @@ class Artifact(object):
             cp_output = subprocess.check_output(mvn_deplist)
         cp_def = next(line for line in cp_output.split('\n')
                       if line.startswith('classpath='))
-        cp = cp_def[len('classpath='):]
-        cache[str(self.coords)] = cp
-        return cp
-
+        return cp_def[len('classpath='):]
+        
     @property
     def dependency_files(self):
         return self.classpath.split(':')
@@ -157,7 +173,7 @@ class Artifact(object):
         subprocess.check_call(mvn_get)
 
     def __nonzero__(self):
-        if self._classpath_from_cache():
+        if self._classpath:
             return True
         else:
             return (path.isdir(self.coords.local_path) and
@@ -172,7 +188,7 @@ def maven(coords, repos=None):
     all_repos = list(user_repos)
     if repos is not None:
         all_repos.extend(repos)
-    artifact = Artifact(coords, all_repos)
+    artifact = Artifact(coords, repos=all_repos, classpath=cache.fetch(coords))
     if not artifact:
         logging.info('Missing artifact: %s' % artifact)
         artifact.fetch()
@@ -186,10 +202,7 @@ def maven(coords, repos=None):
         if dep not in sys.path:
             logging.debug(dep)
             sys.path.append(dep)
-    if cache_file:
-        with open(cache_file, 'w') as outfile:
-            logging.debug('Writing cache: entries=%d', len(cache))
-            json.dump(cache, outfile)
+    cache.store(coords, artifact.classpath)
     return artifact
 
 
