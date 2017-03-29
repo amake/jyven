@@ -48,6 +48,13 @@ Maven operations are performed by invoking the Maven executable in a separate
 process (and in some cases scraping the output), so it is not very efficient or
 robust.
 
+Notes
+=====
+
+Because invoking ``mvn`` is slow, Jyven caches resolved classpaths in a
+``.jyven.json`` file alongside the invoked script. This should be excluded from
+VCS. When invoked in a REPL, no caching is performed.
+
 License
 =======
 
