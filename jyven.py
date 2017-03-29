@@ -37,6 +37,21 @@ dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
 user_repos = []
 
+cache_file = None
+cache = {}
+
+if sys.argv[0]:
+    import json
+    cache_dir = path.dirname(path.realpath(sys.argv[0]))
+    cache_file = path.join(cache_dir, '.jyven.json')
+    logging.debug('Using cache file: %s', cache_file)
+    if path.isfile(cache_file):
+        with open(cache_file) as infile:
+            try:
+                cache = json.load(infile)
+            except Exception, e:
+                logging.error('Failed to load cache: %s', e)
+
 
 def repositories(repos):
     for repo in repos:
@@ -65,9 +80,11 @@ class Coordinates(object):
             self.group, self.artifact, self.packaging, self.classifier, self.version = parts
         else:
             raise Exception
-        self.local_path = path.join(local_repo,
-                                    self.group.replace('.', '/'),
-                                    self.artifact, self.version)
+        self.local_path = None
+        if path.isdir(local_repo):
+            self.local_path = path.join(local_repo,
+                                        self.group.replace('.', '/'),
+                                        self.artifact, self.version)            
 
     def to_xml(self):
         parts = ['<dependency>']
@@ -95,8 +112,18 @@ class Artifact(object):
         self.coords = Coordinates(coords)
         self.repos = repos or []
 
+    def _classpath_from_cache(self):
+        cached = cache.get(str(self.coords), None)
+        if cached and all(path.isfile(item) for item in cached.split(':')):
+            return cached
+        else:
+            return None
+
     @property
     def classpath(self):
+        cached = self._classpath_from_cache()
+        if cached:
+            return cached
         pom = generate_pom(self.repos, [self.coords])
         logging.debug('Generated POM:\n%s', pom)
         with TemporaryFile() as tmp:
@@ -112,7 +139,9 @@ class Artifact(object):
             cp_output = subprocess.check_output(mvn_deplist)
         cp_def = next(line for line in cp_output.split('\n')
                       if line.startswith('classpath='))
-        return cp_def[len('classpath='):]
+        cp = cp_def[len('classpath='):]
+        cache[str(self.coords)] = cp
+        return cp
 
     @property
     def dependency_files(self):
@@ -128,9 +157,12 @@ class Artifact(object):
         subprocess.check_call(mvn_get)
 
     def __nonzero__(self):
-        return (path.isdir(self.coords.local_path) and
-                any(path.splitext(i)[1] == '.pom'
-                    for i in os.listdir(self.coords.local_path)))
+        if self._classpath_from_cache():
+            return True
+        else:
+            return (path.isdir(self.coords.local_path) and
+                    any(path.splitext(i)[1] == '.pom'
+                        for i in os.listdir(self.coords.local_path)))
 
     def __repr__(self):
         return '<Artifact %s>' % self.coords
@@ -154,6 +186,10 @@ def maven(coords, repos=None):
         if dep not in sys.path:
             logging.debug(dep)
             sys.path.append(dep)
+    if cache_file:
+        with open(cache_file, 'w') as outfile:
+            logging.debug('Writing cache: entries=%d', len(cache))
+            json.dump(cache, outfile)
     return artifact
 
 
