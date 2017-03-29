@@ -98,8 +98,7 @@ class Artifact(object):
     @property
     def classpath(self):
         pom = generate_pom(self.repos, [self.coords])
-        logging.debug('Generated POM:')
-        logging.debug(pom)
+        logging.debug('Generated POM:\n%s', pom)
         with TemporaryFile() as tmp:
             tmp.write(pom)
             tmp.flush()
