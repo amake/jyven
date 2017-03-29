@@ -139,7 +139,7 @@ class Artifact(object):
 def maven(coords, repos=None):
     all_repos = list(user_repos)
     if repos is not None:
-        repos.extend(repos)
+        all_repos.extend(repos)
     artifact = Artifact(coords, all_repos)
     if not artifact:
         logging.info('Missing artifact: %s' % artifact)
