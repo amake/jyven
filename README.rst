@@ -12,7 +12,7 @@ Specify a Maven dependency like this::
     maven('group:artifact:version')
 
 The artifact and its ``compile`` dependencies will be downloaded from Maven
-Central and appended to ``sys.path``. To specify a repositories other than Maven
+Central and appended to ``sys.path``. To specify repositories other than Maven
 Central, use the ``repos`` kwarg::
 
     maven('group:artifact:version', repos=['http://example.com'])
