@@ -31,6 +31,7 @@ repo_template = '''<repository>
 '''
 
 mvn_home = path.expanduser('~/.m2')
+local_repo = path.join(mvn_home, 'repository')
 
 dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
@@ -64,7 +65,7 @@ class Coordinates(object):
             self.group, self.artifact, self.packaging, self.classifier, self.version = parts
         else:
             raise Exception
-        self.local_path = path.join(mvn_home, 'repository',
+        self.local_path = path.join(local_repo,
                                     self.group.replace('.', '/'),
                                     self.artifact, self.version)
 
