@@ -42,13 +42,10 @@ dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 user_repos = []
 
 
-def check_classpath(classpath):
-    return classpath and all(path.isfile(item)
-                             for item in classpath.split(':'))
-
 class MavenCli(object):
-    def __init__(self):
-        pass
+    def __init__(self, repos, cache):
+        self.repos = repos if repos else []
+        self.cache = cache
 
     def dependency_build_classpath(self, pom):
         mvn_deplist = ['mvn', 'dependency:build-classpath',
@@ -63,17 +60,37 @@ class MavenCli(object):
                       if line.startswith('classpath='))
         return cp_def[len('classpath='):]
 
-    def dependency_get(self, coords, repos=None):
+    def dependency_get(self, coords):
         mvn_get = ['mvn', 'dependency:get',
                    '-Dartifact=%s' % coords]
-        if repos:
-            named = ['%s::::%s' % (n, url) for n, url in enumerate(repos)]
+        if self.repos:
+            named = ['%s::::%s' % (n, url)
+                     for n, url in enumerate(self.repos)]
             mvn_get.append('-DremoteRepositories=%s' % ','.join(named))
         logging.info(' '.join(mvn_get))
         subprocess.check_call(mvn_get)
 
+    def dependency_files(self, coords):
+        return self.get_classpath(coords).split(':')
 
-mvn = MavenCli()
+    def get_classpath(self, coords):
+        classpath = self.cache.fetch(coords)
+        if not classpath:
+            classpath = self._get_classpath_impl(coords)
+            self.cache.store(coords, classpath)
+        return classpath
+
+    def _get_classpath_impl(self, coords):
+        pom = generate_pom(self.repos, [Coordinates(coords)])
+        logging.debug('Generated POM:\n%s', pom)
+        with TemporaryFile() as tmp:
+            tmp.write(pom)
+            tmp.flush()
+            try:
+                return self.dependency_build_classpath(tmp.name)
+            except subprocess.CalledProcessError:
+                self.dependency_get(coords)
+                return self.dependency_build_classpath(tmp.name)
 
 
 class Cache(object):
@@ -97,7 +114,11 @@ class Cache(object):
 
     def fetch(self, coords):
         cached = self.cache.get(str(coords), None)
-        return cached if check_classpath(cached) else None
+        return cached if self.check_classpath(cached) else None
+
+    def check_classpath(self, classpath):
+        return classpath and all(path.isfile(item)
+                                 for item in classpath.split(':'))
 
     def store(self, coords, classpath):
         self.cache[str(coords)] = classpath
@@ -164,65 +185,17 @@ class Coordinates(object):
                          if part is not None])
 
 
-class Artifact(object):
-    def __init__(self, coords, repos=None, classpath=None):
-        self.coords = Coordinates(coords)
-        self.repos = repos or []
-        self._classpath = classpath if check_classpath(classpath) else None
-
-    @property
-    def classpath(self):
-        if not self._classpath:
-            self._classpath = self._load_classpath()
-        return self._classpath
-
-    def _load_classpath(self):
-        pom = generate_pom(self.repos, [self.coords])
-        logging.debug('Generated POM:\n%s', pom)
-        with TemporaryFile() as tmp:
-            tmp.write(pom)
-            tmp.flush()
-            return mvn.dependency_build_classpath(tmp.name)
-        
-    @property
-    def dependency_files(self):
-        return self.classpath.split(':')
-
-    def fetch(self):
-        mvn.dependency_get(self.coords, repos=self.repos)
-
-    def __nonzero__(self):
-        if self._classpath:
-            return True
-        else:
-            return (path.isdir(self.coords.local_path) and
-                    any(path.splitext(i)[1] == '.pom'
-                        for i in os.listdir(self.coords.local_path)))
-
-    def __repr__(self):
-        return '<Artifact %s>' % self.coords
-
-
 def maven(coords, repos=None):
     all_repos = list(user_repos)
     if repos is not None:
         all_repos.extend(repos)
-    artifact = Artifact(coords, repos=all_repos, classpath=cache.fetch(coords))
-    if not artifact:
-        logging.info('Missing artifact: %s' % artifact)
-        artifact.fetch()
-    try:
-        deps = artifact.dependency_files
-    except subprocess.CalledProcessError:
-        artifact.fetch()
-        deps = artifact.dependency_files
-    logging.info('Adding dependency to path: %s', artifact.coords)
+    mvn = MavenCli(all_repos, cache)
+    deps = mvn.dependency_files(coords)
+    logging.debug('Adding dependency to path: %s', coords)
     for dep in deps:
         if dep not in sys.path:
             logging.debug(dep)
             sys.path.append(dep)
-    cache.store(coords, artifact.classpath)
-    return artifact
 
 
 def jcenter(coords):
