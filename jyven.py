@@ -290,9 +290,11 @@ def jcenter(coords):
 def _bootstrap():
     cache = Cache(jyven_cache_file)
     mvn = MavenCli(None, cache, local_repo=jyven_repo)
-    coords = 'org.apache.maven:maven-embedder:3.3.9'
-    deps = mvn.dependency_files(coords)
-    add_to_path(deps)
+    coords = ['org.apache.maven:maven-embedder:3.3.9',
+              'org.slf4j:slf4j-simple:1.7.5']
+    for c in coords:
+        deps = mvn.dependency_files(c)
+        add_to_path(deps)
     from org.apache.maven.cli import MavenCli as m
 
 if __name__ == '__main__':
