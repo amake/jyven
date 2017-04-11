@@ -41,9 +41,10 @@ dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
 
 class MavenContext(object):
-    def __init__(self, repos):
+    def __init__(self, repos, local_repo=None):
         self.coords = []
         self.repos = repos if repos else []
+        self.local_repo = local_repo
 
     def __enter__(self):
         global context
@@ -52,7 +53,7 @@ class MavenContext(object):
     def __exit__(self, exc_type, exc_value, traceback):
         global context
         context = None
-        _load_dependencies(self.coords, self.repos)
+        _load_dependencies(self.coords, self.repos, self.local_repo)
 
     def add_coords(self, coords):
         if coords and coords not in self.coords:
@@ -65,8 +66,8 @@ class MavenContext(object):
                     self.repos.append(repo)
 
 
-def repositories(repos=None):
-    return MavenContext(repos)
+def repositories(repos=None, local_repo=None):
+    return MavenContext(repos, local_repo)
 
 
 context = None
@@ -235,16 +236,20 @@ class Coordinates(object):
                          if part is not None])
 
 
-def maven(coords, repos=None):
+def maven(coords, repos=None, local_repo=None):
     if context:
         context.add_coords(coords)
         context.add_repos(repos)
+        if local_repo:
+            logging.warning('maven kwarg `local_repo` is ignored '
+                            'when used with the `repositories` context '
+                            'manager.')
     else:
-        _load_dependencies([coords], repos)
+        _load_dependencies([coords], repos, local_repo=local_repo)
 
 
-def _load_dependencies(coords_list, repos):
-    mvn = MavenCli(repos, proj_cache)
+def _load_dependencies(coords_list, repos, local_repo=None):
+    mvn = MavenCli(repos, proj_cache, local_repo)
     for coords in coords_list:
         deps = mvn.dependency_files(coords)
         logging.debug('Adding dependency to path: %s', coords)
