@@ -46,6 +46,35 @@ def check_classpath(classpath):
     return classpath and all(path.isfile(item)
                              for item in classpath.split(':'))
 
+class MavenCli(object):
+    def __init__(self):
+        pass
+
+    def dependency_build_classpath(self, pom):
+        mvn_deplist = ['mvn', 'dependency:build-classpath',
+                       '-DincludeScope=compile',
+                       '-DpathSeparator=:',
+                       '-DoutputAbsoluteArtifactFilename=true',
+                       '-Dmdep.outputFilterFile=true',
+                       '-f', pom]
+        logging.info(' '.join(mvn_deplist))
+        output = subprocess.check_output(mvn_deplist)
+        cp_def = next(line for line in output.split('\n')
+                      if line.startswith('classpath='))
+        return cp_def[len('classpath='):]
+
+    def dependency_get(self, coords, repos=None):
+        mvn_get = ['mvn', 'dependency:get',
+                   '-Dartifact=%s' % coords]
+        if repos:
+            named = ['%s::::%s' % (n, url) for n, url in enumerate(repos)]
+            mvn_get.append('-DremoteRepositories=%s' % ','.join(named))
+        logging.info(' '.join(mvn_get))
+        subprocess.check_call(mvn_get)
+
+
+mvn = MavenCli()
+
 
 class Cache(object):
     def __init__(self, cache_file):
@@ -153,30 +182,14 @@ class Artifact(object):
         with TemporaryFile() as tmp:
             tmp.write(pom)
             tmp.flush()
-            mvn_deplist = ['mvn', 'dependency:build-classpath',
-                           '-DincludeScope=compile',
-                           '-DpathSeparator=:',
-                           '-DoutputAbsoluteArtifactFilename=true',
-                           '-Dmdep.outputFilterFile=true',
-                           '-f', tmp.name]
-            logging.info(' '.join(mvn_deplist))
-            cp_output = subprocess.check_output(mvn_deplist)
-        cp_def = next(line for line in cp_output.split('\n')
-                      if line.startswith('classpath='))
-        return cp_def[len('classpath='):]
+            return mvn.dependency_build_classpath(tmp.name)
         
     @property
     def dependency_files(self):
         return self.classpath.split(':')
 
     def fetch(self):
-        mvn_get = ['mvn', 'dependency:get',
-                   '-Dartifact=%s' % self.coords]
-        if self.repos:
-            named = ['%s::::%s' % (n, url) for n, url in enumerate(self.repos)]
-            mvn_get.append('-DremoteRepositories=%s' % ','.join(named))
-        logging.info(' '.join(mvn_get))
-        subprocess.check_call(mvn_get)
+        mvn.dependency_get(self.coords, repos=self.repos)
 
     def __nonzero__(self):
         if self._classpath:
