@@ -192,6 +192,10 @@ def maven(coords, repos=None):
     mvn = MavenCli(all_repos, cache)
     deps = mvn.dependency_files(coords)
     logging.debug('Adding dependency to path: %s', coords)
+    add_to_path(deps)
+
+
+def add_to_path(deps):
     for dep in deps:
         if dep not in sys.path:
             logging.debug(dep)
