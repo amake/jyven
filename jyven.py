@@ -62,9 +62,9 @@ class Maven(object):
         args = ['dependency:build-classpath',
                        '-f', pom]
         env = {'includeScope': 'compile',
-                   'pathSeparator': ':',
-                   'outputAbsoluteArtifactFilename': 'true',
-                   'mdep.outputFilterFile': 'true'}
+               'pathSeparator': ':',
+               'outputAbsoluteArtifactFilename': 'true',
+               'mdep.outputFilterFile': 'true'}
         if self.local_repo:
             env['maven.repo.local'] = self.local_repo
         logging.info(' '.join(args + env_to_args(env)))
