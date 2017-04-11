@@ -6,6 +6,7 @@ from os import path
 import subprocess
 import logging
 from tempfile import TemporaryFile
+from jarray import array
 
 maven_central_url = 'https://repo1.maven.org/maven2'
 jcenter_url = 'https://jcenter.bintray.com'
@@ -36,6 +37,11 @@ local_repo = path.join(mvn_home, 'repository')
 proj_root = (path.dirname(path.realpath(sys.argv[0]))
              if sys.argv[0] else None)
 proj_cache_file = path.join(proj_root, '.jyven.json') if proj_root else None
+
+jyven_root = path.dirname(path.realpath(__file__))
+jyven_m2 = path.join(jyven_root, 'm2')
+jyven_cache_file = path.join(jyven_m2, '.jyven.json')
+jyven_repo = path.join(jyven_m2, 'repository')
 
 dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
@@ -119,6 +125,46 @@ class MavenCli(Maven):
         return subprocess.check_output(self._cmd(args, env))
 
 
+class MavenEmbedder(Maven):
+    def __init__(self, *args, **kwargs):
+        super(MavenEmbedder, self).__init__(*args, **kwargs)
+        from org.apache.maven.cli import MavenCli as jMavenCli
+        self.mvn = jMavenCli()
+
+    def _arr(self, items):
+        from java.lang import String
+        return array(items, String)
+
+    def _env(self, env):
+        from java.lang import System
+        print('Applying env:', env)
+        for k, v in env.iteritems():
+            System.setProperty(k, v)
+
+    def _invoke(self, args, env):
+        self._env(env)
+        self.mvn.doMain(self._arr(args), proj_root, sys.stdout, sys.stderr)
+
+    def _invoke_get_output(self, args, env):
+        from java.io import ByteArrayOutputStream, PrintStream
+        from java.lang import String
+        env['maven.multiModuleProjectDirectory'] = jyven_root
+        self._env(env)
+        stdout_buf = ByteArrayOutputStream()
+        stdout = PrintStream(stdout_buf)
+        stderr_buf = ByteArrayOutputStream()
+        stderr = PrintStream(stderr_buf)
+        logging.debug(' '.join(args))
+        self.mvn.doMain(self._arr(args), proj_root, stdout, stderr)
+        out = String(stdout_buf.toByteArray(), "utf-8")
+        stdout.close()
+        print('stdout:', out)
+        err = String(stderr_buf.toByteArray(), "utf-8")
+        stderr.close()
+        print('stderr:', err)
+        return out
+
+
 class Cache(object):
     def __init__(self, cache_file):
         self.cache = {}
@@ -154,7 +200,7 @@ class Cache(object):
                 self.json.dump(self.cache, outfile)
 
 
-cache = Cache(proj_cache_file)
+proj_cache = Cache(proj_cache_file)
 
 
 def repositories(repos):
@@ -210,12 +256,21 @@ class Coordinates(object):
                          [self.group, self.artifact, self.packaging, self.classifier, self.version]
                          if part is not None])
 
+def _get_maven():
+    if path.isfile(jyven_cache_file):
+        logging.debug('Using Maven Embedder')
+        _bootstrap()
+        return MavenEmbedder
+    else:
+        logging.debug('Using Maven CLI')
+        return MavenCli
+
 
 def maven(coords, repos=None):
     all_repos = list(user_repos)
     if repos is not None:
         all_repos.extend(repos)
-    mvn = MavenCli(all_repos, cache)
+    mvn = _get_maven()(all_repos, proj_cache)
     deps = mvn.dependency_files(coords)
     logging.debug('Adding dependency to path: %s', coords)
     add_to_path(deps)
@@ -232,5 +287,14 @@ def jcenter(coords):
     return maven(coords, repos=[jcenter_url])
 
 
+def _bootstrap():
+    cache = Cache(jyven_cache_file)
+    mvn = MavenCli(None, cache, local_repo=jyven_repo)
+    coords = 'org.apache.maven:maven-embedder:3.3.9'
+    deps = mvn.dependency_files(coords)
+    add_to_path(deps)
+    from org.apache.maven.cli import MavenCli as m
+
 if __name__ == '__main__':
-    pass
+    if 'bootstrap' in sys.argv:
+        _bootstrap()
