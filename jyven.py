@@ -39,7 +39,37 @@ proj_cache_file = path.join(proj_root, '.jyven.json') if proj_root else None
 
 dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 
-user_repos = []
+
+class MavenContext(object):
+    def __init__(self, repos):
+        self.coords = []
+        self.repos = repos if repos else []
+
+    def __enter__(self):
+        global context
+        context = self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        global context
+        context = None
+        _load_dependencies(self.coords, self.repos)
+
+    def add_coords(self, coords):
+        if coords and coords not in self.coords:
+            self.coords.append(coords)
+
+    def add_repos(self, repos):
+        if repos:
+            for repo in repos:
+                if repo not in self.repos:
+                    self.repos.append(repo)
+
+
+def repositories(repos=None):
+    return MavenContext(repos)
+
+
+context = None
 
 
 def env_to_args(env):
@@ -157,12 +187,6 @@ class Cache(object):
 proj_cache = Cache(proj_cache_file)
 
 
-def repositories(repos):
-    for repo in repos:
-        if repo not in user_repos:
-            user_repos.append(repo)
-
-
 def generate_pom(repos, deps):
     repos_snip = '\n'.join([repo_template % {'id': n, 'url': url}
                             for n, url in enumerate(repos)])
@@ -212,13 +236,19 @@ class Coordinates(object):
 
 
 def maven(coords, repos=None):
-    all_repos = list(user_repos)
-    if repos is not None:
-        all_repos.extend(repos)
-    mvn = MavenCli(all_repos, proj_cache)
-    deps = mvn.dependency_files(coords)
-    logging.debug('Adding dependency to path: %s', coords)
-    add_to_path(deps)
+    if context:
+        context.add_coords(coords)
+        context.add_repos(repos)
+    else:
+        _load_dependencies([coords], repos)
+
+
+def _load_dependencies(coords_list, repos):
+    mvn = MavenCli(repos, proj_cache)
+    for coords in coords_list:
+        deps = mvn.dependency_files(coords)
+        logging.debug('Adding dependency to path: %s', coords)
+        add_to_path(deps)
 
 
 def add_to_path(deps):

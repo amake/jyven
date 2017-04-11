@@ -17,17 +17,19 @@ Central, use the ``repos`` kwarg::
 
     maven('group:artifact:version', repos=['http://example.com'])
 
-There is also a preset for jCenter::
+There is also a preset for JCenter::
 
     from jyven import jcenter
     jcenter('group:artifact:version')
 
-You can also pre-declare multiple repositories at once; do so before declaring
-any dependencies::
+Use the ``repositories`` context manager to specify repositories for a group of
+dependencies and resolve them all at once (this is more efficient than adding
+them one at a time)::
 
     from jyven import maven, repositories
-    repositories([http://example.com', 'http://localnexus'])
-    maven('group:artifact:version')
+    with repositories(['http://example.com', 'http://localnexus']):
+        maven('group:artifact:version')
+        maven('group2:artifact2:version2')
 
 Quick Install
 =============
