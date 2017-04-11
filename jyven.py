@@ -42,33 +42,48 @@ dep_pattern = re.compile(r'([a-z0-9.:-]+):compile')
 user_repos = []
 
 
-class MavenCli(object):
-    def __init__(self, repos, cache):
+def env_to_args(env):
+    return ['-D%s=%s' % pair for pair in env.iteritems()]
+
+
+class Maven(object):
+    def __init__(self, repos, cache, local_repo=None):
         self.repos = repos if repos else []
         self.cache = cache
+        self.local_repo = local_repo
+
+    def _invoke(self, args, env):
+        raise NotImplemented
+
+    def _invoke_get_output(self, args, env):
+        raise NotImplemented
 
     def dependency_build_classpath(self, pom):
-        mvn_deplist = ['mvn', 'dependency:build-classpath',
-                       '-DincludeScope=compile',
-                       '-DpathSeparator=:',
-                       '-DoutputAbsoluteArtifactFilename=true',
-                       '-Dmdep.outputFilterFile=true',
+        args = ['dependency:build-classpath',
                        '-f', pom]
-        logging.info(' '.join(mvn_deplist))
-        output = subprocess.check_output(mvn_deplist)
+        env = {'includeScope': 'compile',
+                   'pathSeparator': ':',
+                   'outputAbsoluteArtifactFilename': 'true',
+                   'mdep.outputFilterFile': 'true'}
+        if self.local_repo:
+            env['maven.repo.local'] = self.local_repo
+        logging.info(' '.join(args + env_to_args(env)))
+        output = self._invoke_get_output(args, env)
         cp_def = next(line for line in output.split('\n')
                       if line.startswith('classpath='))
         return cp_def[len('classpath='):]
 
     def dependency_get(self, coords):
-        mvn_get = ['mvn', 'dependency:get',
-                   '-Dartifact=%s' % coords]
+        args = ['dependency:get']
+        env = {'artifact': '%s' % coords}
         if self.repos:
             named = ['%s::::%s' % (n, url)
                      for n, url in enumerate(self.repos)]
-            mvn_get.append('-DremoteRepositories=%s' % ','.join(named))
-        logging.info(' '.join(mvn_get))
-        subprocess.check_call(mvn_get)
+            env['remoteRepositories'] = ','.join(named)
+        if self.local_repo:
+            env['maven.repo.local'] = self.local_repo
+        logging.info(' '.join(args + env_to_args(env)))
+        self._invoke(args, env)
 
     def dependency_files(self, coords):
         return self.get_classpath(coords).split(':')
@@ -91,6 +106,17 @@ class MavenCli(object):
             except subprocess.CalledProcessError:
                 self.dependency_get(coords)
                 return self.dependency_build_classpath(tmp.name)
+
+
+class MavenCli(Maven):
+    def _cmd(self, args, env):
+        return ['mvn'] + args + env_to_args(env)
+        
+    def _invoke(self, args, env):
+        subprocess.check_call(self._cmd(args, env))
+
+    def _invoke_get_output(self, args, env):
+        return subprocess.check_output(self._cmd(args, env))
 
 
 class Cache(object):
