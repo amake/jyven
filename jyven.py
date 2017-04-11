@@ -154,7 +154,7 @@ class Cache(object):
                 self.json.dump(self.cache, outfile)
 
 
-cache = Cache(proj_cache_file)
+proj_cache = Cache(proj_cache_file)
 
 
 def repositories(repos):
@@ -215,7 +215,7 @@ def maven(coords, repos=None):
     all_repos = list(user_repos)
     if repos is not None:
         all_repos.extend(repos)
-    mvn = MavenCli(all_repos, cache)
+    mvn = MavenCli(all_repos, proj_cache)
     deps = mvn.dependency_files(coords)
     logging.debug('Adding dependency to path: %s', coords)
     add_to_path(deps)
